@@ -68,6 +68,30 @@
 		}; 
 	
 	};
+
+    leds {
+        compatible = "gpio-leds";
+
+        lad0 {
+            label = "lad0";
+            gpios = <&pinctrl 164 0>;
+        };
+
+        lad1 {
+            label = "lad1";
+            gpios = <&pinctrl 165 0>;
+        };
+
+        lad2 {
+            label = "lad2";
+            gpios = <&pinctrl 166 0>;
+        };
+
+        lad3 {
+            label = "lad3";
+            gpios = <&pinctrl 167 0>;
+        };
+    };
 	
 	ahb {	
 		gmac0: eth@f0802000 {
