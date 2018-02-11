@@ -73,11 +73,11 @@
         compatible = "gpio-leds";
 
         led0 {
-            gpios = <&pinctrl 164 0>;
+            gpios = <&pinctrl 146 0>;
         };
 
         led1 {
-            gpios = <&pinctrl 165 0>;
+            gpios = <&pinctrl 147 0>;
         };
 
         led2 {
