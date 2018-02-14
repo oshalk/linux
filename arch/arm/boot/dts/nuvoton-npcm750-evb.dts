@@ -68,26 +68,21 @@
 		}; 
 	
 	};
+	
+	leds {
+            compatible = "gpio-leds";
 
-    leds {
-        compatible = "gpio-leds";
+            heartbeat {
+                label = "heartbeat";
+                gpios = <&pinctrl 146 0>;
+                linux,default-trigger = "timer";
+            };
 
-        led0 {
-            gpios = <&pinctrl 146 0>;
+            identify {
+                label = "identify";
+                gpios = <&pinctrl 147 0>;
+            };
         };
-
-        led1 {
-            gpios = <&pinctrl 147 0>;
-        };
-
-        led2 {
-            gpios = <&pinctrl 166 0>;
-        };
-
-        led3 {
-            gpios = <&pinctrl 167 0>;
-        };
-    };
 	
 	ahb {	
 		gmac0: eth@f0802000 {
