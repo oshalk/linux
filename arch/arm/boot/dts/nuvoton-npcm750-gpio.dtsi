@@ -498,11 +498,11 @@
 			pins = "GPIO124/SMB1CSDA";
 			output-low;
 		};
-		gpio123_pins: gpio125_pins {
+		gpio125_pins: gpio125_pins {
 			pins = "GPIO125/SMB1CSCL";
 			output-high;
 		};
-		gpio123_pins: gpio126_pins {
+		gpio126_pins: gpio126_pins {
 			pins = "GPIO126/SMB1BSDA";
 			input-enable;
 		};
