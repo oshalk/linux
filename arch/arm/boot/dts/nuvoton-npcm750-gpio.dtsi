@@ -488,15 +488,15 @@
 		};
 		gpio122_pins: gpio122_pins {
 			pins = "GPIO122/SMB2BSDA";
-			output-low;
+			input-enable;
 		};
 		gpio123_pins: gpio123_pins {
 			pins = "GPIO123/SMB2BSCL";
-			output-low;
+			input-enable;
 		};
 		gpio124_pins: gpio124_pins {
 			pins = "GPIO124/SMB1CSDA";
-			output-high;
+			output-low;
 		};
 		gpio123_pins: gpio125_pins {
 			pins = "GPIO125/SMB1CSCL";
