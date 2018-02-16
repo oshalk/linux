@@ -481,9 +481,11 @@ int FIU_ManualWrite(struct spi_nor *nor, u8 transaction_code, u32 address, u8 * 
 
 
 void SPI_Flash_Common_GetStatus(struct spi_nor *nor, u8* status);
+void SPI_Flash_Common_SectorErase(struct spi_nor *nor, u32 addr);
 void SPI_Flash_Common_Write(struct spi_nor *nor, u32 destAddr, u8* data, u32 size);
 void SPI_Flash_Common_WaitTillReady(struct spi_nor *nor);
 int SPI_Flash_Init(u32 flashBaseAddress);
+int SPI_Flash_Write(struct spi_nor *nor, u32 destAddr, u8* data, u32 size);
 int SPI_Flash_SectorErase(u32 destAddr);
 void spi_flash_high_addr_wr(struct spi_nor *nor,u8 HighAddr);
 

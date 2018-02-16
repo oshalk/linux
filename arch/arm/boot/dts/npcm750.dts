@@ -12,8 +12,8 @@
  */
 
 /dts-v1/;
-#include "nuvoton-npcm750.dtsi"
-#include "nuvoton-npcm750-gpio.dtsi"
+#include "npcmx50.dtsi"
+#include "npcmx50-gpio.dtsi"
 
 / {
         model = "Nuvoton npcm750 Development Board (Device Tree)";
@@ -92,7 +92,6 @@
 						 &r1err_pins
 						 &r1md_pins>;
 			phy-mode = "rmii";
-			#use-ncsi; /* add this to support ncsi */
 			status = "okay";
 		};
 
@@ -188,48 +187,40 @@
             		};
             		kernel@200000 {
                         label = "kernel";
-            			reg = <0x0200000 0x400000>;
+            			reg = <0x0200000 0x200000>;
             		};
-            		rootfs@600000 {
+            		rootfs@400000 {
                         label = "rootfs";
-            			reg = <0x0600000 0x700000>;
+            			reg = <0x0400000 0x700000>;
             		};
-            		spare1@D00000 {
+            		spare1@B00000 {
                         label = "spare1";
-            			reg = <0x0D00000 0x200000>;
+            			reg = <0x0B00000 0x500000>;
             		};
-            		spare2@0F00000 {
+            		spare2@1000000 {
                         label = "spare2";
-            			reg = <0x0F00000 0x200000>;
+            			reg = <0x1000000 0xB00000>;
             		};
-            		spare3@1100000 {
+            		spare3@1B00000 {
                         label = "spare3";
-            			reg = <0x1100000 0x200000>;
-            		};
-            		spare4@1300000 {
-                        label = "spare4";
-            			reg = <0x1300000 0x0>;
+            			reg = <0x1B00000 0x0>;
             		};
         	    };
 			};
 		};
 		spi3: spi@c0000000 {
-				spi-nor@0 {
-				partitions@A0000000 {
-					compatible = "fixed-partitions";
-					#address-cells = <1>;
-					#size-cells = <1>;
-					system1@0 {
-						label = "spi3-system1";
-						reg = <0x0 0x800000>;
-					};
-					system2@800000 {
-						label = "spi3-system2";
-						reg = <0x800000 0x0>;
-					};
-				};
+			spi-nor@0 {
+                partitions@A0000000 {
+            		compatible = "fixed-partitions";
+                    #address-cells = <1>;
+    		        #size-cells = <1>;
+            		spare@0 {
+            			label = "spare-1";
+            			reg = <0x0 0x0>;
+            		};
+        	    };
 			};
-		};
+		};	
 		sdhci1: sdhci@f0842000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&sd1_pins>;
@@ -322,7 +313,7 @@
 				status = "okay";
 			};
 		};
-				
+		
 		/* tmp100 on SVB */
 		i2c6: i2c-bus@f0086000 {
 			#address-cells = <1>;
@@ -335,77 +326,6 @@
 				status = "okay";
 			};
 		};
-		
-		/* TEB bus3 */
-		i2c3: i2c-bus@f0083000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-		
-		/* TEB bus4 */
-		i2c4: i2c-bus@f0084000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus5 */
-		i2c5: i2c-bus@f0085000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus7 */
-		i2c7: i2c-bus@f0087000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus8 */
-		i2c8: i2c-bus@f0088000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus9 */
-		i2c9: i2c-bus@f0089000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus10 */
-		i2c10: i2c-bus@f008a000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus11 */
-		i2c11: i2c-bus@f008b000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus14 */
-		i2c14: i2c-bus@f008e000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-
-		/* TEB bus15 */
-		i2c15: i2c-bus@f008f000 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-		};
-		
         	mft: mft@0 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&fanin0_pins

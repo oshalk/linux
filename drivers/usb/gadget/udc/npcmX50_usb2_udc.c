@@ -59,6 +59,7 @@
 //#include <mach/regs_npcm750_gcr.h>
 //#include <mach/regs_npcm750_clk.h>
 
+#include "gadget_chips.h"
 #include "npcmX50_usb2_udc.h"
 
 #undef VERBOSE
@@ -625,7 +626,8 @@ static int npcmX50_ep_enable(struct usb_ep *_ep,
 		break;
 	case USB_ENDPOINT_XFER_ISOC:
 		/* Calculate transactions needed for high bandwidth iso */
-		mult = usb_endpoint_maxp_mult(desc);
+		mult = (unsigned char)(1 + ((max >> 11) & 0x03));
+		max = max & 0x7ff;	/* bit 0~10 */
 		/* 3 transactions at most */
 		if (mult > 3)
 			goto en_done;
@@ -1418,7 +1420,6 @@ static struct usb_gadget_ops npcmX50_gadget_ops = {
 	.udc_stop = npcmX50_udc_stop,
 };
 
-static void fsl_noop_complete(struct usb_ep *ep, struct usb_request *req) { }
 /* Set protocol stall on ep0, protocol stall will automatically be cleared
    on new transaction */
 static void ep0stall(struct npcmX50_udc *udc)
@@ -1458,7 +1459,7 @@ static int ep0_prime_status(struct npcmX50_udc *udc, int direction)
 	req->req.length = 0;
 	req->req.status = -EINPROGRESS;
 	req->req.actual = 0;
-	req->req.complete = fsl_noop_complete;
+	req->req.complete = NULL;
 	req->dtd_count = 0;
 
 	ret = usb_gadget_map_request(&ep->udc->gadget, &req->req, ep_is_in(ep));
@@ -1552,7 +1553,7 @@ static void ch9getstatus(struct npcmX50_udc *udc, u8 request_type, u16 value,
 	req->req.length = 2;
 	req->req.status = -EINPROGRESS;
 	req->req.actual = 0;
-	req->req.complete = fsl_noop_complete;
+	req->req.complete = NULL;
 	req->dtd_count = 0;
 
 	ret = usb_gadget_map_request(&ep->udc->gadget, &req->req, ep_is_in(ep));
@@ -2599,17 +2600,6 @@ static int struct_ep_setup(struct npcmX50_udc *udc, unsigned char index,
 	ep->ep.ops = &npcmX50_ep_ops;
 	ep->stopped = 0;
 
-	if (index == 0) {
-		ep->ep.caps.type_control = true;
-	} else {
-		ep->ep.caps.type_iso = true;
-		ep->ep.caps.type_bulk = true;
-		ep->ep.caps.type_int = true;
-	}
-	if (index & 1)
-		ep->ep.caps.dir_in = true;
-	else
-		ep->ep.caps.dir_out = true;
 	/* for ep0: maxP defined in desc
 	 * for other eps, maxP is set by epautoconfig() called by gadget layer
 	 */

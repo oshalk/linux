@@ -90,6 +90,9 @@ void __iomem *fiu_base[FIU_MAX_MODULE_NUM];
 #ifdef NPCMX50_MTD_SPINOR_DEBUG
 static void dump_msg(const char *label, const unsigned char *buf, unsigned int length);
 #endif
+static int npcmx50_spinor_read(struct spi_nor *nor, loff_t from, size_t len, size_t *retlen, u_char *buf);
+static int npcmx50_spinor_write(struct spi_nor *nor, loff_t to, size_t len, size_t *retlen, const UINT8 *buf);
+static int npcmx50_spinor_erase(struct spi_nor *nor, loff_t offs);
 static void spi_flash_unlock_protection(struct spi_nor *nor);
 
 /*---------------------------------------------------------------------------------------------------------*/
@@ -353,6 +356,7 @@ int FIU_ManualWrite(struct spi_nor *nor, u8 transaction_code, u32 address, u8 * 
     /*-----------------------------------------------------------------------------------------------------*/
     SET_REG_FIELD(FIU_UMA_CTS(host->fiu_num), FIU_UMA_CTS_SW_CS, 1);
 
+
     return 0;
 }
 
@@ -374,30 +378,32 @@ void SPI_Flash_Common_GetStatus(struct spi_nor *nor, u8* status)
     FIU_UMA_Read(nor, SPI_READ_STATUS_REG_CMD, 0, 0, status, 1);
 }
 
-static int npcm750_spi_erase(struct spi_nor *nor, loff_t addr)
+void SPI_Flash_Common_SectorErase(struct spi_nor *nor, u32 addr)
 {
     if ((addr >> 24)&&(nor->addr_width == 3)) 
     {
         spi_flash_high_addr_wr(nor,addr >> 24);
-		
-         FIU_UMA_Write(
-             nor,                           // only one flash device
-             SPI_WRITE_ENABLE_CMD,              // write enable transaction code
-             0,                                 // address irrelevant
-             FALSE,                             // no address for transaction 
-             NULL,                              // no write data
-             0);                                // no data
-      
-         FIU_UMA_Write(
-             nor,                               // only one flash device
-             SPI_4K_SECTOR_ERASE_CMD,           // sector erase transaction code
-             (addr & 0xFFFFFF),                 // address relevant
-             TRUE,                              // address for transaction 
-             NULL,                              // no write data
-             0);                                // no data
-                             
-         SPI_Flash_Common_WaitTillReady(nor);   
+     FIU_UMA_Write(
+         nor,                           // only one flash device
+         SPI_WRITE_ENABLE_CMD,              // write enable transaction code
+         0,                                 // address irrelevant
+         FALSE,                             // no address for transaction 
+         NULL,                              // no write data
+         0);                                // no data
+    
 
+         SPI_Flash_Common_WaitTillReady(nor);
+
+
+     FIU_UMA_Write(
+         nor,                           // only one flash device
+         SPI_4K_SECTOR_ERASE_CMD,           // sector erase transaction code
+             (addr & 0xFFFFFF),                 // address relevant
+         TRUE,                              // address for transaction 
+         NULL,                              // no write data
+         0); 
+                                    // no data
+         SPI_Flash_Common_WaitTillReady(nor);   
          spi_flash_high_addr_wr(nor,0);
     }
      else
@@ -409,7 +415,7 @@ static int npcm750_spi_erase(struct spi_nor *nor, loff_t addr)
             FALSE,                             // no address for transaction 
             NULL,                              // no write data
             0);                                // no data
-
+         SPI_Flash_Common_WaitTillReady(nor);   
         FIU_UMA_Write(
             nor,                           // only one flash device
             SPI_4K_SECTOR_ERASE_CMD,           // sector erase transaction code
@@ -417,11 +423,8 @@ static int npcm750_spi_erase(struct spi_nor *nor, loff_t addr)
             TRUE,                              // address for transaction 
             NULL,                              // no write data
             0); 
-
         SPI_Flash_Common_WaitTillReady(nor);   
     }
-
-    return 0;
 }
 
 void SPI_Flash_Common_Write(struct spi_nor *nor, u32 destAddr, u8* data, u32 size)
@@ -430,23 +433,24 @@ void SPI_Flash_Common_Write(struct spi_nor *nor, u32 destAddr, u8* data, u32 siz
     {
         spi_flash_high_addr_wr(nor,destAddr >> 24);
 
-        /*-----------------------------------------------------------------------------------------------------*/
-        /* Write Flash Using 256 Page EXTENDED MODE                                                            */
-        /*-----------------------------------------------------------------------------------------------------*/
-        FIU_UMA_Write(nor, SPI_WRITE_ENABLE_CMD, 0, FALSE, NULL, 0);
- 
+    /*-----------------------------------------------------------------------------------------------------*/
+    /* Write Flash Using 256 Page EXTENDED MODE                                                            */
+    /*-----------------------------------------------------------------------------------------------------*/
+    FIU_UMA_Write(nor, SPI_WRITE_ENABLE_CMD, 0, FALSE, NULL, 0);
+    
+    SPI_Flash_Common_WaitTillReady(nor);
+
+
         FIU_ManualWrite(nor, SPI_PAGE_PRGM_CMD, (destAddr & 0xFFFFFF), data, size);
 
         SPI_Flash_Common_WaitTillReady(nor); 
-          
         spi_flash_high_addr_wr(nor,0);
     }
     else
     {
         FIU_UMA_Write(nor, SPI_WRITE_ENABLE_CMD, 0, FALSE, NULL, 0);
-        
+    SPI_Flash_Common_WaitTillReady(nor);
         FIU_ManualWrite(nor, SPI_PAGE_PRGM_CMD, destAddr, data, size);
-
         SPI_Flash_Common_WaitTillReady(nor);   
     }
 }
@@ -481,7 +485,7 @@ static void spi_flash_unlock_protection(struct spi_nor *nor)
 }
 
 
-void SPI_Flash_WritePageAligned_L(struct spi_nor *nor, u32 addr, u8 *src, u32 cnt)
+void SPI_Flash_WritePageAligned_L(struct spi_nor *nor, u8 *src, u32 addr, u32 cnt)
 {
     u32  local_addr      = addr;
     u32  actual_size     = 0;
@@ -520,6 +524,13 @@ void SPI_Flash_WritePageAligned_L(struct spi_nor *nor, u32 addr, u8 *src, u32 cn
     }
 }
 
+int SPI_Flash_Write(struct spi_nor *nor, u32 destAddr, u8* data, u32 size)
+{  
+    SPI_Flash_WritePageAligned_L(nor, data, destAddr, size);
+
+    return 0;
+}
+
 #ifdef NPCMX50_MTD_SPINOR_DEBUG
 static void dump_msg(const char *label, const unsigned char *buf, unsigned int length)
 {
@@ -552,7 +563,7 @@ static void dump_msg(const char *label, const unsigned char *buf, unsigned int l
 }
 #endif
 
-static int npcm750_spi_read(struct spi_nor *nor, loff_t from, size_t len, u_char *buf)
+static int npcmx50_spinor_read(struct spi_nor *nor, loff_t from, size_t len, size_t *retlen, u_char *buf)
 {
     struct npcm750_chip *chip = nor->priv;
     struct npcm750_spi_bus *host = chip->host;   
@@ -561,7 +572,6 @@ static int npcm750_spi_read(struct spi_nor *nor, loff_t from, size_t len, u_char
     int i, readlen, currlen;
     UINT32 addr;
     UINT8 *buf_ptr;
-    size_t retlen = 0;
 
 	mtd = &nor->mtd;
 
@@ -576,6 +586,12 @@ static int npcm750_spi_read(struct spi_nor *nor, loff_t from, size_t len, u_char
     if (from + len > (UINT32)mtd->size)
     {
         return -EINVAL;
+    }
+    
+    /* Byte count starts at zero. */
+    if (retlen)
+    {
+        *retlen = 0;
     }
     
     DEBUG_FLASH("mtd_spinor: %s , mtd->size 0x%08x %p %p\n", __FUNCTION__, (UINT32) mtd->size,host->iobase, buf);
@@ -599,11 +615,11 @@ static int npcm750_spi_read(struct spi_nor *nor, loff_t from, size_t len, u_char
         {
             if (nor->addr_width == 3) 
             {
-                SET_REG_FIELD(FIU_DRD_CFG(host->fiu_num),  FIU_DRD_CFG_RDCMD, SPI_READ_DATA_DUAL_IO_3_ADDR_4_ADDR_CMD);
+                SET_REG_FIELD(FIU_DRD_CFG(host->fiu_num),  FIU_DRD_CFG_RDCMD, SPI_READ_DATA_DUAL_IO_3_ADDR_4_ADDR_CMD); 
             }
             else
             {
-                SET_REG_FIELD(FIU_DRD_CFG(host->fiu_num),  FIU_DRD_CFG_RDCMD, SPI_READ_DATA_DUAL_IO_4_ADDR_CMD);
+                SET_REG_FIELD(FIU_DRD_CFG(host->fiu_num),  FIU_DRD_CFG_RDCMD, SPI_READ_DATA_DUAL_IO_4_ADDR_CMD); 
             }
             SET_REG_FIELD( FIU_DRD_CFG(host->fiu_num),  FIU_DRD_CFG_ADDSIZ, 0x1);
         }
@@ -623,7 +639,7 @@ static int npcm750_spi_read(struct spi_nor *nor, loff_t from, size_t len, u_char
         }
         release_mem_region((host->res_mem->start + (host->MaxChipAddMap * chip->chipselect)) + from, len);
 
-        retlen = len;
+        *retlen = len;
     }
     else
     {
@@ -668,22 +684,29 @@ static int npcm750_spi_read(struct spi_nor *nor, loff_t from, size_t len, u_char
         }
         while (currlen > 0);
 
-        retlen = i;
+        *retlen = i;
     }
 
     DUMP_MSG("MTD_READ", buf, i);
-    return retlen;
+    return 0;
 }
 
-static int npcm750_spi_write(struct spi_nor *nor, loff_t to, size_t len, const UINT8 *buf)
-{
+static int npcmx50_spinor_write(struct spi_nor *nor, loff_t to, size_t len,
+                            	size_t *retlen, const UINT8 *buf)
+{    
     UINT32 addr = (UINT32) to;
     UINT32 cnt = (UINT32) len;
     struct mtd_info *mtd;
+    int ret;
 	
 	mtd = &nor->mtd;
 
     DEBUG_FLASH("mtd_spinor: %s %s 0x%08x, len %zd\n", __FUNCTION__, "to", (UINT32)to, len);
+
+    if (retlen)
+    {
+        *retlen = 0;
+    }
     
     /* sanity checks */
     if (!len)
@@ -696,8 +719,50 @@ static int npcm750_spi_write(struct spi_nor *nor, loff_t to, size_t len, const U
         return -EINVAL;
     }
     
-    SPI_Flash_WritePageAligned_L(nor, addr, (UINT8 *)buf, cnt); 
-    return cnt;
+    if ((SPI_Flash_Write(nor, addr, (UINT8 *)buf, cnt)) == 0) 
+    {
+        *retlen = cnt;
+		ret = 0;
+    }
+    else
+    {
+        *retlen = 0;
+        ret = -EINVAL;
+    }
+ 
+    return ret;
+}
+
+static int npcmx50_spinor_erase(struct spi_nor *nor, loff_t offs)
+{
+    SPI_Flash_Common_SectorErase(nor, offs);
+    return 0;
+}
+
+
+static ssize_t npcm750_spi_write(struct spi_nor *nor, loff_t to,
+		size_t len, const u_char *write_buf)
+{
+    UINT32 retlen;
+
+    npcmx50_spinor_write(nor, to, len, &retlen, write_buf);
+
+    return retlen;
+}
+
+static ssize_t npcm750_spi_read(struct spi_nor *nor, loff_t from,
+		size_t len, u_char *read_buf)
+{
+    UINT32 retlen;
+
+    npcmx50_spinor_read(nor, from, len, &retlen, read_buf);
+
+    return retlen;
+}
+
+static int npcm750_spi_erase(struct spi_nor *nor, loff_t offs)
+{
+    return npcmx50_spinor_erase(nor, offs); 
 }
 
 static int npcm750_spi_read_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
@@ -894,7 +959,7 @@ static int npcm750_spi_probe(struct platform_device *pdev)
     host->res_mem = platform_get_resource_byname(pdev, IORESOURCE_MEM, "memory");
     if (host->res_mem) 
     {
-		host->Direct_Read = TRUE;
+        host->Direct_Read = TRUE;
     }
     else
     {        
@@ -925,17 +990,7 @@ static int npcm750_spi_probe(struct platform_device *pdev)
         printk(KERN_INFO "npcm750_spi_nor_register_all failed\n\n\n");
     }
 
-    if (host->Direct_Read == TRUE)
-    {
-		/* set access to Dual I/O */
-		SET_REG_FIELD(FIU_DRD_CFG(host->fiu_num),   FIU_DRD_CFG_ACCTYPE, 1);
-		/* set dummy byte to 1 */
-		SET_REG_FIELD(FIU_DRD_CFG(host->fiu_num),   FIU_DRD_CFG_DBW, 1);
-    }
-
     fiu_num++;
-
-    DEBUG_FLASH("mtd_spinor: %s() date=%s time=%s\n\n", __FUNCTION__,  __DATE__, __TIME__);
 
     return ret;
 }

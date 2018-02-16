@@ -33,8 +33,6 @@ extern void npcmx50_spin_unlock_irqrestore(unsigned long flags);
 
 #define ADD_BIT(pos)   (1<<pos)
 
-#define VDM_DO_NOT_FILTER_ANY_PACKET
-
 uint32_t vdma_rx_buff_size_int,*vdma_rx_buff,*vdma_rx_buff_virt_addr;
 
 static uint8_t ready_for_transmit=0;
@@ -501,10 +499,8 @@ uint8_t vdm_set_timeout(VDM_RX_TIMEOUT_t timeout)
 void vdm_disable_rx(void)
 {
 	uint32_t reg_val;
-	// filtering - 0xFFFF is invalid vendor ID , so no messages should be received
-	reg_val =  ADD_BIT(VDM_FLT_REG_FLT_ENABLE_BIT_POS) + 0xFFFF; // 0xFFFF is invalid vendor ID , so no messages should be received
+	reg_val =  ADD_BIT(VDM_FLT_REG_FLT_ENABLE_BIT_POS) + 0xFFFF;  // filtering
 	REG_WRITE(VDM_FLT_REG, reg_val);
-	pr_debug("\n %s(): VDM_FLT_REG = 0x%08X\n", __FUNCTION__, reg_val);
 }
 
 /* function : vdm_enable_rx
@@ -515,13 +511,8 @@ void vdm_disable_rx(void)
 void vdm_enable_rx(void)
 {
 	uint32_t reg_val;
-#ifdef VDM_DO_NOT_FILTER_ANY_PACKET
-	reg_val =  0;                                                       // no filtering
-#else
-	reg_val =  ADD_BIT(VDM_FLT_REG_FLT_ENABLE_BIT_POS) + VDM_VENDOR_ID; // filtering
-#endif
+	reg_val =  ADD_BIT(VDM_FLT_REG_FLT_ENABLE_BIT_POS) + VDM_VENDOR_ID;  // 0xFFFF is invalid vendor ID , so no messages should be received
 	REG_WRITE(VDM_FLT_REG, reg_val);
-	pr_debug("\n %s(): VDM_FLT_REG = 0x%08X\n", __FUNCTION__, reg_val);
 }
 
 /* function : vdm_is_ready_for_write
@@ -614,13 +605,8 @@ int vdm_init_common(uint32_t *apVdma_rx_buff,uint32_t *apVdma_rx_buff_virt_addr,
 	REG_WRITE(VDM_CNT_REG,reg_val);
 	// end of reset
 
-#ifdef VDM_DO_NOT_FILTER_ANY_PACKET
-	reg_val =  0;                                                       // no filtering
-#else
-	reg_val =  ADD_BIT(VDM_FLT_REG_FLT_ENABLE_BIT_POS) + VDM_VENDOR_ID; // filtering
-#endif
+	reg_val =  ADD_BIT(VDM_FLT_REG_FLT_ENABLE_BIT_POS) + VDM_VENDOR_ID;  // filtering
 	REG_WRITE(VDM_FLT_REG, reg_val);
-	pr_debug("\n %s(): VDM_FLT_REG = 0x%08X\n", __FUNCTION__, reg_val);
 
 	reg_val =  ADD_BIT(VDM_INT_EN_REG_RX_INT_BIT_POS) ;  // enable rx int
 	REG_WRITE(VDM_INT_EN_REG,reg_val);

@@ -67,6 +67,7 @@
 #include <linux/fs.h>
 #include <linux/cdev.h>
 
+#include "gadget_chips.h"
 
 #include <linux/input.h>
 

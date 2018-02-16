@@ -58,9 +58,7 @@
 #ifdef EXECUTE_FUNC
 #undef EXECUTE_FUNC
 #endif
-
-#define NPCMX50_I2CSEGCTL  (void __iomem *)  (NPCMX50_GCR_BASE_ADDR + 0xE4)
-#define I2CSEGCTL_VAL	  0x0333F000
+#define EXECUTE_FUNC(func, args) func args;
 
 #define I2C_VERSION "0.0.1"
 
@@ -70,13 +68,12 @@
 /*---------------------------------------------------------------------------------------------------------*/
 #ifdef CONFIG_NPCM750_I2C_DEBUG
     #define dev_err(a, f, x...)  if (a) printk("NPCM750-I2C: %s() dev_err:" f, __func__, ## x)
-    #define I2C_DEBUG(f, x...)          printk("NPCM750-I2C.%d: %s():%d " f, bus->module__num, __func__, __LINE__, ## x)
+    #define I2C_DEBUG(f, x...)          printk("NPCM750-I2C: %s():%d " f, __func__, __LINE__, ## x)
 #else
     #define I2C_DEBUG(f, x...)
 #endif
     #define HAL_PRINT(f, x...)          printk(f, ## x)
 
-#define EXECUTE_FUNC(func, args) func args;
 
 
 typedef struct bit_field {
@@ -658,7 +655,6 @@ typedef struct nuvoton_i2c_bus {
 	unsigned char __iomem	*base;
 	/* Synchronizes I/O mem access to base. */
 	spinlock_t			lock;
-	spinlock_t			bank_lock;
 	struct completion		cmd_complete;
 	int				irq;
 	int				cmd_err;
@@ -1277,7 +1273,7 @@ static BOOLEAN SMB_InitModule (
     UINT16          bus_freq
 )
 {
-    unsigned long bank_flags;
+    unsigned long flags;
     int     i;
 
     /*-----------------------------------------------------------------------------------------------------*/
@@ -1322,7 +1318,7 @@ static BOOLEAN SMB_InitModule (
         return FALSE;
     }
 
-	spin_lock_irqsave(&bus->bank_lock, bank_flags);
+	spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0); // select bank 0 for SMB addresses
 
     /*-----------------------------------------------------------------------------------------------------*/
@@ -1334,7 +1330,7 @@ static BOOLEAN SMB_InitModule (
     }
 
     SMB_SelectBank(bus, SMB_BANK_1); // by default most access is in bank 1
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* Enable module - before configuring CTL1 !                                                           */
@@ -1437,7 +1433,7 @@ static DEFS_STATUS SMB_SlaveEnable_l (
     BOOLEAN      enable
 )
 {
-    unsigned long bank_flags;
+    unsigned long flags;
     UINT8 SmbAddrX_Addr = BUILD_FIELD_VAL(SMBADDRx_ADDR, addr) | BUILD_FIELD_VAL(SMBADDRx_SAEN, enable);
 
     if (addr_type == SMB_GC_ADDR)
@@ -1459,7 +1455,7 @@ static DEFS_STATUS SMB_SlaveEnable_l (
     /*-----------------------------------------------------------------------------------------------------*/
     /* Disable interrupts and select bank 0 for address 3 to ...                                           */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
+    spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
     /*-----------------------------------------------------------------------------------------------------*/
@@ -1471,7 +1467,7 @@ static DEFS_STATUS SMB_SlaveEnable_l (
     /* return to bank 1 and enable interrupts (if needed)                                                  */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 
     return DEFS_STATUS_OK;
 }
@@ -1492,13 +1488,13 @@ static DEFS_STATUS SMB_SlaveEnable_l (
 /*---------------------------------------------------------------------------------------------------------*/
 static UINT8 SMB_GetSlaveAddress_l (nuvoton_i2c_bus_t *bus, SMB_ADDR_T addrEnum)
 {
-    unsigned long bank_flags;
+    unsigned long flags;
     UINT8 slaveAddress;
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* disable interrupts and select bank 0 for address 3 to ...                                           */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
+    spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
     slaveAddress = REG_READ(SMBADDR(bus, addrEnum));
@@ -1507,7 +1503,7 @@ static UINT8 SMB_GetSlaveAddress_l (nuvoton_i2c_bus_t *bus, SMB_ADDR_T addrEnum)
     /* return to bank 1 and enable interrupts (if needed)                                                  */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 
     return  slaveAddress;
 }
@@ -1562,7 +1558,6 @@ static DEFS_STATUS SMB_AddSlaveAddress (nuvoton_i2c_bus_t *bus, UINT8 slaveAddrT
 {
     int i;
     DEFS_STATUS ret = DEFS_STATUS_FAIL;
-    I2C_DEBUG("slaveAddrToAssign = %02X\n", slaveAddrToAssign);
 
     slaveAddrToAssign |= 0x80; //set the enable bit
 
@@ -1611,14 +1606,14 @@ static DEFS_STATUS SMB_AddSlaveAddress (nuvoton_i2c_bus_t *bus, UINT8 slaveAddrT
 static DEFS_STATUS SMB_RemSlaveAddress (nuvoton_i2c_bus_t *bus, UINT8 slaveAddrToRemove)
 {
     int i;
-    unsigned long bank_flags;
+    unsigned long flags;
 
     slaveAddrToRemove |= 0x80 ; //Set the enable bit
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* disable interrupts and select bank 0 for address 3 to ...                                           */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
+    spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
     for (i = SMB_SLAVE_ADDR1; i < SMB_NUM_OF_ADDR; i++)
@@ -1633,7 +1628,7 @@ static DEFS_STATUS SMB_RemSlaveAddress (nuvoton_i2c_bus_t *bus, UINT8 slaveAddrT
     /* return to bank 1 and enable interrupts (if needed)                                                  */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 
     return DEFS_STATUS_OK;
 }
@@ -1719,11 +1714,11 @@ static BOOLEAN SMB_StartMasterTransaction (
     BOOLEAN         use_PEC
 )
 {
-    unsigned long lock_flags;
+    unsigned long flags;
 
 #ifdef CONFIG_NPCM750_I2C_DEBUG    
-    I2C_DEBUG("slave_addr=%x nwrite=%d nread=%d write_data=%p read_data=%p use_PEC=%d\n", 
-        slave_addr, nwrite, nread, write_data, read_data, use_PEC);
+    I2C_DEBUG("bus=%d slave_addr=%x nwrite=%d nread=%d write_data=%p read_data=%p use_PEC=%d\n", 
+        bus, slave_addr, nwrite, nread, write_data, read_data, use_PEC);
     if (nwrite && nwrite != SMB_BYTES_QUICK_PROT)
     {
         int i;
@@ -1749,7 +1744,7 @@ static BOOLEAN SMB_StartMasterTransaction (
         return FALSE;
     }
 
-    spin_lock_irqsave(&bus->lock, lock_flags);
+    spin_lock_irqsave(&bus->lock, flags);
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* Update driver state                                                                                 */
@@ -1801,13 +1796,10 @@ static BOOLEAN SMB_StartMasterTransaction (
     /*-----------------------------------------------------------------------------------------------------*/
     if (bus->fifo_use == TRUE)
     {
-        unsigned long bank_flags;
         /*-------------------------------------------------------------------------------------------------*/
         /* select bank 1 for FIFO registers                                                                */
         /*-------------------------------------------------------------------------------------------------*/
-        spin_lock_irqsave(&bus->bank_lock, bank_flags);
         SMB_SelectBank(bus, SMB_BANK_1);
-        spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
 
         /*-------------------------------------------------------------------------------------------------*/
         /* clear FIFO and relevant status bits.                                                            */
@@ -1839,7 +1831,7 @@ static BOOLEAN SMB_StartMasterTransaction (
     }
     SMB_Start(bus);
 
-    spin_unlock_irqrestore(&bus->lock, lock_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 
     return TRUE;
 }
@@ -2354,7 +2346,7 @@ static BOOLEAN SMB_InitClock (
     UINT16  sclfrq      = 0;
     UINT8   hldt        = 7;
     BOOLEAN fastMode    = FALSE;
-    unsigned long bank_flags;
+    unsigned long flags;
     UINT32  source_clock_freq;
 
     source_clock_freq = bus->apb_clk;
@@ -2546,7 +2538,7 @@ static BOOLEAN SMB_InitClock (
     /*-----------------------------------------------------------------------------------------------------*/
     /* Select Bank 0 to access SMBCTL4/SMBCTL5                                                             */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
+    spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
 #if defined (SMB_CAPABILITY_FAST_MODE_SUPPORT) || defined (SMB_CAPABILITY_FAST_MODE_PLUS_SUPPORT)
@@ -2581,7 +2573,7 @@ static BOOLEAN SMB_InitClock (
     /* Return to Bank 1                                                                                    */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 
     return TRUE;
 }
@@ -3865,7 +3857,6 @@ static void SMB_Reset (nuvoton_i2c_bus_t *bus)
 /*---------------------------------------------------------------------------------------------------------*/
 static void SMB_MasterAbort (nuvoton_i2c_bus_t *bus)
 {
-    I2C_DEBUG("");
     SMB_AbortData(bus);
     SMB_Reset(bus);
 }
@@ -4261,12 +4252,12 @@ static BOOLEAN SMB_InterruptIsPending (void)
 /*---------------------------------------------------------------------------------------------------------*/
 static void SMB_WriteSCL (nuvoton_i2c_bus_t *bus, SMB_LEVEL_T level)
 {
-    unsigned long bank_flags;
+    unsigned long flags;
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* Select Bank 0 to access SMBCTL4                                                                     */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
+    spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
     /*-----------------------------------------------------------------------------------------------------*/
@@ -4288,7 +4279,7 @@ static void SMB_WriteSCL (nuvoton_i2c_bus_t *bus, SMB_LEVEL_T level)
     /* Return to Bank 1                                                                                    */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 }
 
 /*---------------------------------------------------------------------------------------------------------*/
@@ -4305,12 +4296,12 @@ static void SMB_WriteSCL (nuvoton_i2c_bus_t *bus, SMB_LEVEL_T level)
 /*---------------------------------------------------------------------------------------------------------*/
 static void SMB_WriteSDA (nuvoton_i2c_bus_t *bus, SMB_LEVEL_T level)
 {
-    unsigned long bank_flags;
+    unsigned long flags;
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* Select Bank 0 to access SMBCTL4                                                                     */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
+    spin_lock_irqsave(&bus->lock, flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
     /*-----------------------------------------------------------------------------------------------------*/
@@ -4332,7 +4323,7 @@ static void SMB_WriteSDA (nuvoton_i2c_bus_t *bus, SMB_LEVEL_T level)
     /* Return to Bank 1                                                                                    */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
+    spin_unlock_irqrestore(&bus->lock, flags);
 }
 #endif // SMB_CAPABILITY_FORCE_SCL_SDA
 
@@ -4447,7 +4438,6 @@ static void SMBF_PrintModuleRegs (nuvoton_i2c_bus_t *bus)
     /*-----------------------------------------------------------------------------------------------------*/
     /* Bank 0 Registers                                                                                    */
     /*-----------------------------------------------------------------------------------------------------*/
-    spin_lock_irqsave(&bus->bank_lock, bank_flags);
     SMB_SelectBank(bus, SMB_BANK_0);
 
     HAL_PRINT("SMB%1XADDR3           = 0x%02X\n", bus->module__num, REG_READ(SMBADDR3(bus)));
@@ -4471,7 +4461,6 @@ static void SMBF_PrintModuleRegs (nuvoton_i2c_bus_t *bus)
     /* Bank 1 Registers                                                                                    */
     /*-----------------------------------------------------------------------------------------------------*/
     SMB_SelectBank(bus, SMB_BANK_1);
-    spin_unlock_irqrestore(&bus->bank_lock, bank_flags);
 
     HAL_PRINT("SMB%1XFIF_CTS         = 0x%02X\n", bus->module__num, REG_READ(SMBFIF_CTS(bus)));
     HAL_PRINT("SMB%1XTXF_CTL         = 0x%02X\n", bus->module__num, REG_READ(SMBTXF_CTL(bus)));
@@ -4661,13 +4650,13 @@ static int nuvoton_i2c_master_xfer(struct i2c_adapter *adap,
 {
 	struct nuvoton_i2c_bus *bus = adap->algo_data;
     struct i2c_msg *msg0, *msg1;
-	unsigned long time_left, lock_flags;
+	unsigned long time_left, flags;
     UINT16 nwrite, nread;
     UINT8 *write_data, *read_data;
     UINT8 slave_addr;
 	int ret = 0;
 
-	//spin_lock_irqsave(&bus->lock, lock_flags);
+	//spin_lock_irqsave(&bus->lock, flags);
 	bus->cmd_err = 0;
 
     if (num > 2 || num < 1){
@@ -4724,19 +4713,17 @@ static int nuvoton_i2c_master_xfer(struct i2c_adapter *adap,
 
 	reinit_completion(&bus->cmd_complete);
     SMB_StartMasterTransaction(bus, slave_addr, nwrite, nread, write_data, read_data, 0);
-	//spin_unlock_irqrestore(&bus->lock, lock_flags);
+	//spin_unlock_irqrestore(&bus->lock, flags);
 
 	time_left = wait_for_completion_timeout(&bus->cmd_complete,
 						bus->adap.timeout);
     
-	if (time_left == 0){
-        SMB_MasterAbort(bus);
+	if (time_left == 0)
 		ret = -ETIMEDOUT;
-	}
 	else
 		ret = bus->cmd_err;
     
-	spin_lock_irqsave(&bus->lock, lock_flags);
+	spin_lock_irqsave(&bus->lock, flags);
 #ifdef CONFIG_NPCM750_I2C_DEBUG
     if (bus->msgs[0].flags & I2C_M_RD)
         nread = bus->msgs[0].len;
@@ -4756,7 +4743,7 @@ static int nuvoton_i2c_master_xfer(struct i2c_adapter *adap,
 
     bus->msgs = NULL;
     bus->msgs_num = 0;
-	spin_unlock_irqrestore(&bus->lock, lock_flags);
+	spin_unlock_irqrestore(&bus->lock, flags);
 
 	/* If nothing went wrong, return number of messages transferred. */
 	if (ret >= 0)
@@ -4790,12 +4777,12 @@ static void __nuvoton_i2c_reg_slave(struct nuvoton_i2c_bus *bus, u16 slave_addr)
 static int nuvoton_i2c_reg_slave(struct i2c_client *client)
 {
 	struct nuvoton_i2c_bus *bus;
-	unsigned long lock_flags;
+	unsigned long flags;
 
 	bus = client->adapter->algo_data;
-	spin_lock_irqsave(&bus->lock, lock_flags);
+	spin_lock_irqsave(&bus->lock, flags);
 	if (bus->slave) {
-		spin_unlock_irqrestore(&bus->lock, lock_flags);
+		spin_unlock_irqrestore(&bus->lock, flags);
 		return -EINVAL;
 	}
 
@@ -4803,7 +4790,7 @@ static int nuvoton_i2c_reg_slave(struct i2c_client *client)
 
 	bus->slave = client;
 	bus->slave_state = ASPEED_I2C_SLAVE_STOP;
-	spin_unlock_irqrestore(&bus->lock, lock_flags);
+	spin_unlock_irqrestore(&bus->lock, flags);
 
 	return 0;
 }
@@ -4812,11 +4799,11 @@ static int nuvoton_i2c_unreg_slave(struct i2c_client *client)
 {
 	struct nuvoton_i2c_bus *bus = client->adapter->algo_data;
 	u32 func_ctrl_reg_val;
-	unsigned long lock_flags;
+	unsigned long flags;
 
-	spin_lock_irqsave(&bus->lock, lock_flags);
+	spin_lock_irqsave(&bus->lock, flags);
 	if (!bus->slave) {
-		spin_unlock_irqrestore(&bus->lock, lock_flags);
+		spin_unlock_irqrestore(&bus->lock, flags);
 		return -EINVAL;
 	}
 
@@ -4826,7 +4813,7 @@ static int nuvoton_i2c_unreg_slave(struct i2c_client *client)
 	writel(func_ctrl_reg_val, bus->base + ASPEED_I2C_FUN_CTRL_REG);
 
 	bus->slave = NULL;
-	spin_unlock_irqrestore(&bus->lock, lock_flags);
+	spin_unlock_irqrestore(&bus->lock, flags);
 
 	return 0;
 }
@@ -4847,19 +4834,20 @@ static int nuvoton_i2c_probe_bus(struct platform_device *pdev)
 	struct resource *res;
     struct clk* i2c_clk;
 	int ret;
+
     int module__num;
-	static u32 first_boot = 1;
+    
+#ifdef CONFIG_OF        
+	module__num = of_alias_get_id(pdev->dev.of_node, "i2c");
+    I2C_DEBUG("module__num = %d\n", module__num);
+#endif //  CONFIG_OF
 
 	bus = devm_kzalloc(&pdev->dev, sizeof(*bus), GFP_KERNEL);
 	if (!bus)
 		return -ENOMEM;
-    
-#ifdef CONFIG_OF        
-	module__num = of_alias_get_id(pdev->dev.of_node, "i2c");
     bus->module__num = module__num;
     
-    I2C_DEBUG("\n");
-    
+#ifdef CONFIG_OF  
 	i2c_clk = devm_clk_get(&pdev->dev, NULL);    
     if (IS_ERR(i2c_clk))	
     {
@@ -4871,11 +4859,6 @@ static int nuvoton_i2c_probe_bus(struct platform_device *pdev)
     I2C_DEBUG("I2C APB clock is %d\n" , bus->apb_clk);
 #endif //  CONFIG_OF
 
-	if (first_boot) {
-		iowrite32((u32) I2CSEGCTL_VAL, (void *) NPCMX50_I2CSEGCTL);
-		first_boot = 0;
-	}
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	bus->base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(bus->base))
@@ -4884,7 +4867,6 @@ static int nuvoton_i2c_probe_bus(struct platform_device *pdev)
 
 	/* Initialize the I2C adapter */
 	spin_lock_init(&bus->lock);
-	spin_lock_init(&bus->bank_lock);
 	init_completion(&bus->cmd_complete);
 	bus->adap.owner = THIS_MODULE;
 	bus->adap.class = I2C_CLASS_HWMON | I2C_CLASS_SPD;
@@ -4929,14 +4911,14 @@ static int nuvoton_i2c_probe_bus(struct platform_device *pdev)
 static int nuvoton_i2c_remove_bus(struct platform_device *pdev)
 {
 	struct nuvoton_i2c_bus *bus = platform_get_drvdata(pdev);
-	unsigned long lock_flags;
+	unsigned long flags;
 
-	spin_lock_irqsave(&bus->lock, lock_flags);
+	spin_lock_irqsave(&bus->lock, flags);
 
 	/* Disable everything. */
     SMB_Disable(bus);
 
-	spin_unlock_irqrestore(&bus->lock, lock_flags);
+	spin_unlock_irqrestore(&bus->lock, flags);
 
 	i2c_del_adapter(&bus->adap);
 

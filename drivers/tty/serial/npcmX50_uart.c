@@ -2247,7 +2247,7 @@ static struct uart_driver npcmX50_uart_drv =
     .dev_name       = NPCMX50_SERIAL_NAME,
     .nr             = NPCMX50_UART_NUM_OF_MODULES,
     .cons           = NPCMX50_SERIAL_CONSOLE,
-    .driver_name    = NPCMX50_SERIAL_NAME,
+    .driver_name    = "NPCM7xx_serial",
     .major          = NPCMX50_SERIAL_MAJOR,
     .minor          = NPCMX50_SERIAL_MINOR,
 };
@@ -2571,6 +2571,16 @@ static void npcmX50_console_putchar(struct uart_port *port, int ch)
 static int __init npcmX50_console_setup(struct console *co, char *options)
 {
     struct uart_port *port;
+    int    rc = 0;
+    char console_str[] = "uart3";
+#ifdef CONFIG_OF
+    struct resource res;
+    struct device_node *np = NULL;
+#endif
+#ifdef CLK_TREE_SUPPORT_IN_EARLY_INIT
+    struct platform_device *pdev = NULL;
+    struct clk* ser_clk = NULL;
+#endif
 
      //   int n = 0;
 
@@ -2587,8 +2597,42 @@ static int __init npcmX50_console_setup(struct console *co, char *options)
     /*-----------------------------------------------------------------------------------------------------*/
     /* if port is illigal we use default console port                                                      */
     /*-----------------------------------------------------------------------------------------------------*/
-    if (co->index == -1 || co->index >= NPCMX50_UART_NUM_OF_MODULES)
+    if (co->index <= -1 || co->index >= NPCMX50_UART_NUM_OF_MODULES)
         co->index = NPCMX50_SERIAL_CONSOLE_PORT;
+    console_str[4] = (char) (co->index + '0');
+#ifdef CONFIG_OF
+    np = of_find_node_by_name(NULL, console_str);
+    if (np == NULL){
+        printk(KERN_ERR "%s- can't get device tree node\n", __FUNCTION__);
+    }
+    rc = of_address_to_resource(np, 0, &res);
+    if (rc) {
+        pr_info("%s: of_address_to_resource fail ret %d \n", __FUNCTION__, rc);
+        return -EINVAL;
+    }
+    npcmX50_serial_ports[co->index].port.membase = ioremap(res.start, resource_size(&res));
+    if (!npcmX50_serial_ports[co->index].port.membase) {
+                    pr_info("%s:serial_virt_addr fail \n", __FUNCTION__);
+                    return -ENOMEM;
+    }
+    NPCMX50_SERIAL_MSG("%s: console UART base is 0x%08X\n", __FUNCTION__, (u32)npcmX50_serial_ports[co->index].port.membase);
+#ifdef CLK_TREE_SUPPORT_IN_EARLY_INIT
+    pdev = of_find_device_by_node(np);
+    ser_clk = devm_clk_get(&pdev->dev, NULL);
+    if (IS_ERR(ser_clk))
+        return PTR_ERR(ser_clk);
+    NPCMX50_SERIAL_MSG("%s: serial clock is %ld\n" , __FUNCTION__, clk_get_rate(ser_clk));
+    npcmX50_serial_ports[co->index].port.uartclk   = clk_get_rate(ser_clk);
+#else
+    npcmX50_serial_ports[co->index].port.uartclk = 24*_1MHz_;
+#endif //  CLK_TREE_SUPPORT_IN_EARLY_INIT
+#else
+    npcmX50_serial_ports[co->index].port.uartclk = 24*_1MHz_;
+    npcmX50_serial_ports[0].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(0);
+    npcmX50_serial_ports[1].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(1);
+    npcmX50_serial_ports[2].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(2);
+    npcmX50_serial_ports[3].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(3);
+#endif // CONFIG_OF
 
     /*-----------------------------------------------------------------------------------------------------*/
     /* Getting port structure                                                                              */
@@ -2613,6 +2657,9 @@ static int __init npcmX50_console_setup(struct console *co, char *options)
     /*-----------------------------------------------------------------------------------------------------*/
     /* Initializing the port's HW                                                                          */
     /*-----------------------------------------------------------------------------------------------------*/
+    if(co->index == NPCMX50_UART0_DEV)
+        npcmx50_uart_init((NPCMX50_UART_DEV_T)co->index, NPCMX50_UART_MUX_SKIP_CONFIG, NPCMX50_SERIAL_BAUD);
+    else
     npcmx50_uart_init((NPCMX50_UART_DEV_T)co->index, NPCMX50_UART_MUX_MODE3_HSP1_UART1__HSP2_UART2__UART3_SI2, NPCMX50_SERIAL_BAUD);
 
     /*-----------------------------------------------------------------------------------------------------*/
@@ -2639,7 +2686,6 @@ static int __init npcmX50_console_setup(struct console *co, char *options)
 
     return uart_set_options(port, co, baud, parity, bits, flow);
 }
-
 
 
 /*---------------------------------------------------------------------------------------------------------*/
@@ -2696,67 +2742,6 @@ static struct console npcmX50_serial_console =
 /*---------------------------------------------------------------------------------------------------------*/
 static int npcmX50_console_init(void)
 {
-    int    rc = 0;
-
-#ifdef CONFIG_OF
-	struct resource res;
-	struct device_node *np = NULL;
-
-#ifdef CLK_TREE_SUPPORT_IN_EARLY_INIT
-	struct platform_device *pdev = NULL;
-	struct clk* ser_clk = NULL;
-#else
-	npcmX50_serial_ports[NPCMX50_SERIAL_CONSOLE_PORT].port.uartclk = 24*_1MHz_;
-#endif
-
-    np = of_find_node_by_name(NULL, "uart3");
-    if (np == NULL){
-        printk(KERN_ERR "%s- can't get device tree node\n", __FUNCTION__);
-    }
-
-    rc = of_address_to_resource(np, 0, &res);
-    if (rc) {
-        pr_info("%s: of_address_to_resource fail ret %d \n", __FUNCTION__, rc);
-        return -EINVAL;
-    }
-
-    npcmX50_serial_ports[NPCMX50_SERIAL_CONSOLE_PORT].port.membase = ioremap(res.start, resource_size(&res));
-
-    if (!npcmX50_serial_ports[NPCMX50_SERIAL_CONSOLE_PORT].port.membase) {
-                    pr_info("%s:serial_virt_addr fail \n", __FUNCTION__);
-                    return -ENOMEM;
-    }
-    NPCMX50_SERIAL_MSG("%s: console UART base is 0x%08X\n", __FUNCTION__, (u32)npcmX50_serial_ports[NPCMX50_SERIAL_CONSOLE_PORT].port.membase);
-
-            // alternative solution:
-        	//early_platform_driver_register(&early_npcmx50_uart_driver, "npcmX50-uart");
-        	//early_platform_driver_probe(NPCMX50_SERIAL_NAME, NPCMX50_UART_NUM_OF_MODULES, 0);
-
-#ifdef CLK_TREE_SUPPORT_IN_EARLY_INIT
-    pdev = of_find_device_by_node(np);
-    ser_clk = devm_clk_get(&pdev->dev, NULL);
-
-    if (IS_ERR(ser_clk))
-        return PTR_ERR(ser_clk);
-
-    NPCMX50_SERIAL_MSG("%s: serial clock is %ld\n" , __FUNCTION__, clk_get_rate(ser_clk));
-
-    npcmX50_serial_ports[NPCMX50_SERIAL_CONSOLE_PORT].port.uartclk   = clk_get_rate(ser_clk);
-#endif //  CLK_TREE_SUPPORT_IN_EARLY_INIT
-
-#else
-    npcmX50_serial_ports[NPCMX50_SERIAL_CONSOLE_PORT].port.uartclk = 24*_1MHz_;
-    npcmX50_serial_ports[0].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(0);
-    npcmX50_serial_ports[1].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(1);
-    npcmX50_serial_ports[2].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(2);
-    npcmX50_serial_ports[3].port.membase = (unsigned char*)UART_VIRT_BASE_ADDR(3);
-#endif // CONFIG_OF
-
-    /*-----------------------------------------------------------------------------------------------------*/
-    /* Initializing our ports                                                                              */
-    /*-----------------------------------------------------------------------------------------------------*/
-    //npcmX50_console_init_ports();
-
     /*-----------------------------------------------------------------------------------------------------*/
     /* Register our console for early messages printing                                                    */
     /*-----------------------------------------------------------------------------------------------------*/
